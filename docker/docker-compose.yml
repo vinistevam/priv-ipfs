@@ -1,1 +1,75 @@
 version: '3.4'
+
+services:
+
+## Cluster NODE 0 ################################################################
+  node0:
+    container_name: node0
+    image: ipfs/go-ipfs:release
+    ports:
+          - "4001:4001" # ipfs swarm
+#         - "5001:5001" # expose if needed/wanted
+#         - "8080:8080" # exposes if needed/wanted
+    volumes:
+      - ./compose/node0:/data/ipfs
+      
+  cluster0:
+    container_name: cluster0
+    image: ipfs/ipfs-cluster:latest
+    depends_on:
+      - node0
+    environment:
+      CLUSTER_SECRET: ${CLUSTER_SECRET} # From shell variable
+      IPFS_API: /dns4/node0/tcp/5001
+    ports:
+          - "127.0.0.1:9094:9094" # API
+#         - "9096:9096" # Cluster IPFS Proxy endpoint
+    volumes:
+      - ./compose/cluster0:/data/ipfs-cluster
+
+
+## Cluster NODE 1 ################################################################  
+  node1:
+    container_name: node1
+    image: ipfs/go-ipfs:release
+    ports:
+          - "4101:4001" # ipfs swarm
+#         - "5101:5001" # expose if needed/wanted
+#         - "8180:8080" # exposes if needed/wanted
+    volumes:
+      - ./compose/node1:/data/ipfs
+
+  # cluster1 bootstraps to cluster0 if not bootstrapped before
+  cluster1:
+    container_name: cluster1
+    image: ipfs/ipfs-cluster:latest
+    depends_on:
+      - cluster0
+      - node1
+    environment:
+      CLUSTER_SECRET: ${CLUSTER_SECRET} # From shell variable
+      IPFS_API: /dns4/node1/tcp/5001
+    ports:
+          - "127.0.0.1:9194:9094" # API
+#         - "9196:9096" # Cluster IPFS Proxy endpoint
+    volumes:
+      - ./compose/cluster1:/data/ipfs-cluster
+    entrypoint:
+      - "/sbin/tini"
+      - "--"
+    # Translation: if state folder does not exist, find cluster0 id and bootstrap
+    # to it.
+    command: >-
+      sh -c '
+        cmd="daemon --upgrade"
+        if [ ! -d /data/ipfs-cluster/raft ]; then
+          while ! ipfs-cluster-ctl --host /dns4/cluster0/tcp/9094 id; do
+            sleep 1
+          done
+          pid=`ipfs-cluster-ctl --host /dns4/cluster0/tcp/9094 id | grep -o -E "^(\w+)"`
+          sleep 10
+          cmd="daemon --bootstrap /dns4/cluster0/tcp/9096/ipfs/$$pid"
+        fi
+        exec /data/swarm-key.sh
+        exec /usr/local/bin/entrypoint.sh $$cmd
+      '
