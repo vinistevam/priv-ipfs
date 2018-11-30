@@ -38,6 +38,8 @@ services:
 #         - "8180:8080" # exposes if needed/wanted
     volumes:
       - ./compose/node1:/data/ipfs
+    command: >-
+        exec sh ./scripts/swarm-key.sh $$cmd      
 
   # cluster1 bootstraps to cluster0 if not bootstrapped before
   cluster1:
@@ -70,6 +72,6 @@ services:
           sleep 10
           cmd="daemon --bootstrap /dns4/cluster0/tcp/9096/ipfs/$$pid"
         fi
-        exec /data/swarm-key.sh
         exec /usr/local/bin/entrypoint.sh $$cmd
       '
+    
